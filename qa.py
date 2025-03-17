@@ -1,5 +1,4 @@
 import os
-import csv
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, simpledialog
@@ -13,28 +12,16 @@ class QAApp:
         self.root = root
         self.root.title("QA Tester")
         
-        self.xpath_entries = []  # Store dynamic XPath entries
-        self.xpath_dropdowns = []  # Store dynamic dropdowns
-        self.input_entries = []  # Store dynamic input entries
-        self.input_labels = []  # Store labels for input entries
-        self.sleep_entries = []  # Store sleep time entries
-        self.loop_entries = []  # Store loop count entries
-        self.delete_buttons = []  # Store delete buttons
-        self.xpath_labels = []  # Store XPath labels
-        self.sleep_labels = []  # Store sleep labels
-        self.loop_labels = []  # Store loop labels
-        self.equals_labels = []  # Store equals sign labels
+        self.actions = []  # Store XPath, Sleep, and Scroll actions
         
-        # Define uniform padding
         uniform_padx = 10
         uniform_pady = 10
-
+        
         # URL Entry
         tk.Label(root, text="Enter the URL to test:").grid(row=0, column=0, padx=uniform_padx, pady=uniform_pady)
         self.url_entry = tk.Entry(root, width=50)
         self.url_entry.grid(row=0, column=1, padx=uniform_padx, pady=uniform_pady)
         
-        # Test and Make EXE Button
         tk.Button(root, text="Test", command=self.submit).grid(row=0, column=2, padx=uniform_padx, pady=uniform_pady)
         tk.Button(root, text="Make EXE", command=self.make_exe).grid(row=0, column=3, padx=uniform_padx, pady=uniform_pady)
 
@@ -43,16 +30,28 @@ class QAApp:
         self.csv_file_entry = tk.Entry(root, width=50)
         self.csv_file_entry.grid(row=1, column=1, padx=uniform_padx, pady=uniform_pady)
         tk.Button(root, text="Browse", command=self.browse_csv).grid(row=1, column=2, padx=uniform_padx, pady=uniform_pady)
+        
+        # Scrollable Frame for Actions
+        self.canvas = tk.Canvas(root, width=800, height=300)
+        self.scrollbar = tk.Scrollbar(root, orient="vertical", command=self.canvas.yview)
+        self.scrollable_frame = tk.Frame(self.canvas)
 
-        # Section for dynamic XPaths
-        self.xpath_frame = tk.Frame(root)
-        self.xpath_frame.grid(row=2, column=0, columnspan=10, padx=uniform_padx, pady=uniform_pady)
+        self.scrollable_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
 
-        # Button to add new XPath dynamically
-        tk.Button(root, text="New XPath", command=self.add_xpath_row).grid(row=3, column=1, padx=uniform_padx, pady=uniform_pady)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.grid(row=2, column=0, columnspan=10, padx=uniform_padx, pady=uniform_pady, sticky='ew')
+        self.scrollbar.grid(row=2, column=10, sticky='ns')
 
-        # Add the first XPath entry row
-        self.add_xpath_row()
+        # Buttons for Adding Actions
+        button_frame = tk.Frame(root)
+        button_frame.grid(row=3, column=0, columnspan=10, pady=uniform_pady)
+
+        tk.Button(button_frame, text="New XPath", command=self.add_xpath_action).grid(row=0, column=0, padx=5)
+        tk.Button(button_frame, text="Sleep", command=self.add_sleep_action).grid(row=0, column=1, padx=5)
+        tk.Button(button_frame, text="Scroll", command=self.add_scroll_action).grid(row=0, column=2, padx=5)
+        
+        self.add_xpath_action()  # Add the first XPath action by default
 
     def browse_csv(self):
         file_path = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
@@ -60,75 +59,101 @@ class QAApp:
             self.csv_file_entry.delete(0, tk.END)
             self.csv_file_entry.insert(0, file_path)
 
-    def add_xpath_row(self):
-        row_index = len(self.xpath_entries)
+    def add_xpath_action(self):
+        index = len(self.actions)
+        action_widgets = {'type': 'xpath'}
+        
+        action_widgets['label_entry'] = tk.Entry(self.scrollable_frame, width=15)
+        action_widgets['label_entry'].grid(row=index, column=0, padx=5, pady=5)
+        
+        action_widgets['xpath_entry'] = tk.Entry(self.scrollable_frame, width=30)
+        action_widgets['xpath_entry'].grid(row=index, column=1, padx=5, pady=5)
+        
+        action_widgets['equals_label'] = tk.Label(self.scrollable_frame, text="=")
+        action_widgets['equals_label'].grid(row=index, column=2, padx=5, pady=5)
+        
+        action_widgets['action_dropdown'] = ttk.Combobox(self.scrollable_frame, width=15)
+        action_widgets['action_dropdown']['values'] = ['click', 'input']
+        action_widgets['action_dropdown'].grid(row=index, column=3, padx=5, pady=5)
+        action_widgets['action_dropdown'].bind("<<ComboboxSelected>>", lambda event, idx=index: self.handle_dropdown_selection(idx))
+        
+        action_widgets['input_label'] = tk.Label(self.scrollable_frame, text="CSV Header:")
+        action_widgets['input_label'].grid(row=index, column=4, padx=5, pady=5)
+        action_widgets['input_label'].grid_remove()
+        
+        action_widgets['input_entry'] = tk.Entry(self.scrollable_frame, width=20)
+        action_widgets['input_entry'].grid(row=index, column=5, padx=5, pady=5)
+        action_widgets['input_entry'].grid_remove()
+        
+        action_widgets['delete_button'] = tk.Button(self.scrollable_frame, text="X", command=lambda idx=index: self.delete_action(idx), fg="red")
+        action_widgets['delete_button'].grid(row=index, column=6, padx=5, pady=5)
+        
+        self.actions.append(action_widgets)
 
-        # Store widgets in a dictionary
-        row_widgets = {}
+    def add_sleep_action(self):
+        index = len(self.actions)
+        action_widgets = {'type': 'sleep'}
+        
+        action_widgets['label'] = tk.Label(self.scrollable_frame, text="Sleep (sec):")
+        action_widgets['label'].grid(row=index, column=0, padx=5, pady=5)
+        
+        action_widgets['sleep_entry'] = tk.Entry(self.scrollable_frame, width=10)
+        action_widgets['sleep_entry'].grid(row=index, column=1, padx=5, pady=5)
+        
+        action_widgets['delete_button'] = tk.Button(self.scrollable_frame, text="X", command=lambda idx=index: self.delete_action(idx), fg="red")
+        action_widgets['delete_button'].grid(row=index, column=2, padx=5, pady=5)
+        
+        self.actions.append(action_widgets)
 
-        row_widgets['xpath_label'] = tk.Label(self.xpath_frame, text=f"Enter XPath {row_index + 1}:")
-        row_widgets['xpath_label'].grid(row=row_index, column=0, padx=5, pady=5)
+    def add_scroll_action(self):
+        index = len(self.actions)
+        action_widgets = {'type': 'scroll'}
         
-        row_widgets['xpath_entry'] = tk.Entry(self.xpath_frame, width=30)
-        row_widgets['xpath_entry'].grid(row=row_index, column=1, padx=5, pady=5)
+        action_widgets['label'] = tk.Label(self.scrollable_frame, text="Scroll (px):")
+        action_widgets['label'].grid(row=index, column=0, padx=5, pady=5)
         
-        row_widgets['equals_label'] = tk.Label(self.xpath_frame, text="=")
-        row_widgets['equals_label'].grid(row=row_index, column=2, padx=5, pady=5)
+        action_widgets['scroll_entry'] = tk.Entry(self.scrollable_frame, width=10)
+        action_widgets['scroll_entry'].grid(row=index, column=1, padx=5, pady=5)
         
-        row_widgets['xpath_dropdown'] = ttk.Combobox(self.xpath_frame, width=15)
-        row_widgets['xpath_dropdown']['values'] = ['click', 'input']
-        row_widgets['xpath_dropdown'].grid(row=row_index, column=3, padx=5, pady=5)
-        row_widgets['xpath_dropdown'].bind("<<ComboboxSelected>>", lambda event, idx=row_index: self.handle_dropdown_selection(idx))
+        action_widgets['delete_button'] = tk.Button(self.scrollable_frame, text="X", command=lambda idx=index: self.delete_action(idx), fg="red")
+        action_widgets['delete_button'].grid(row=index, column=2, padx=5, pady=5)
         
-        row_widgets['input_label'] = tk.Label(self.xpath_frame, text="Csv Header:")
-        row_widgets['input_label'].grid(row=row_index, column=4, padx=5, pady=5)
-        row_widgets['input_label'].grid_remove()
-        
-        row_widgets['input_entry'] = tk.Entry(self.xpath_frame, width=20)
-        row_widgets['input_entry'].grid(row=row_index, column=5, padx=5, pady=5)
-        row_widgets['input_entry'].grid_remove()
-        
-        row_widgets['delete_button'] = tk.Button(self.xpath_frame, text="X", command=lambda idx=row_index: self.delete_xpath_row(idx), fg="red")
-        row_widgets['delete_button'].grid(row=row_index, column=10, padx=5, pady=5)
-        
-        self.xpath_entries.append(row_widgets)
+        self.actions.append(action_widgets)
 
-    def delete_xpath_row(self, index):
-        for widget in self.xpath_entries[index].values():
-            widget.grid_remove()
-        self.xpath_entries.pop(index)
+    def delete_action(self, index):
+        action = self.actions.pop(index)
+        for key, widget in action.items():
+            if isinstance(widget, tk.Widget):
+                widget.grid_remove()
+                widget.destroy()
+        
+        # Refresh action indices
+        for i, action in enumerate(self.actions):
+            if 'delete_button' in action:
+                action['delete_button'].config(command=lambda idx=i: self.delete_action(idx))
 
     def handle_dropdown_selection(self, index):
-        if self.xpath_entries[index]['xpath_dropdown'].get() == "input":
-            self.xpath_entries[index]['input_label'].grid()
-            self.xpath_entries[index]['input_entry'].grid()
+        if self.actions[index]['action_dropdown'].get() == "input":
+            self.actions[index]['input_label'].grid()
+            self.actions[index]['input_entry'].grid()
         else:
-            self.xpath_entries[index]['input_label'].grid_remove()
-            self.xpath_entries[index]['input_entry'].grid_remove()
+            self.actions[index]['input_label'].grid_remove()
+            self.actions[index]['input_entry'].grid_remove()
 
     def submit(self):
         driver = webdriver.Chrome()
-        driver.maximize_window()  # Open browser in full screen
+        driver.maximize_window()
         driver.get(self.url_entry.get())
-        
-        for idx, row in enumerate(self.xpath_entries):
-            xpath = row['xpath_entry'].get()
-            action = row['xpath_dropdown'].get()
-            
-            if action == 'click':
-                element = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, xpath)))
-                element.click()
-            elif action == 'input':
-                input_value = row['input_entry'].get()
-                element = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, xpath)))
-                element.send_keys(input_value)
-        
+
+        for action in self.actions:
+            pass  # Implement action execution here
+
         driver.quit()
     
     def make_exe(self):
         exe_name = simpledialog.askstring("Input", "Enter the name for the EXE file:")
         if exe_name:
-            script_path = os.path.abspath(__file__)  # Get the current script's path
+            script_path = os.path.abspath(__file__)
             os.system(f'pyinstaller --onefile --windowed -n "{exe_name}" "{script_path}"')
 
 if __name__ == "__main__":
