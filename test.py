@@ -59,15 +59,17 @@ class QAApp:
         tk.Button(button_frame, text="New XPath", command=self.add_xpath_action).grid(row=0, column=0, padx=5)
         tk.Button(button_frame, text="Sleep", command=self.add_sleep_action).grid(row=0, column=1, padx=5)
         tk.Button(button_frame, text="Scroll", command=self.add_scroll_action).grid(row=0, column=2, padx=5)
-        
-        self.add_xpath_action()  # Add the first XPath action by default
+        tk.Button(button_frame, text="Loop", command=self.add_loop_action).grid(row=0, column=3, padx=5)
+        tk.Button(button_frame, text="End Loop", command=self.add_end_loop_action).grid(row=0, column=4, padx=5)
+
+        self.add_xpath_action()
 
     def browse_csv(self):
-        file_path = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
+        file_path = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv ")])
         if file_path:
             self.csv_file_entry.delete(0, tk.END)
             self.csv_file_entry.insert(0, file_path)
-        self.load_csv(file_path)
+            self.load_csv(file_path)
 
     def load_csv(self, file_path):
         """Load the CSV file and store rows."""
@@ -142,6 +144,26 @@ class QAApp:
         
         self.actions.append(action_widgets)
 
+    def add_loop_action(self):
+        index = len(self.actions)
+        loop_label = tk.Label(self.scrollable_frame, text="Loop starts from here")
+        loop_label.grid(row=index, column=0, columnspan=6, padx=5, pady=5)
+        
+        delete_button = tk.Button(self.scrollable_frame, text="X", command=lambda idx=index:self.delete_action(idx), fg="red")
+        delete_button.grid(row=index, column=6, padx=5, pady=5)
+
+        self.actions.append({'type': 'loop', 'label': loop_label, 'delete_button': delete_button})
+
+    def add_end_loop_action(self):
+        index = len(self.actions)
+        end_loop_label = tk.Label(self.scrollable_frame, text="End Loop")
+        end_loop_label.grid(row=index, column=0, columnspan=6, padx=5, pady=5)
+        
+        delete_button = tk.Button(self.scrollable_frame, text="X", command=lambda idx=index: self.delete_action(idx), fg="red")
+        delete_button.grid(row=index, column=6, padx=5, pady=5)
+
+        self.actions.append({'type': 'end_loop', 'label': end_loop_label, 'delete_button': delete_button})
+
     def delete_action(self, index):
         action = self.actions.pop(index)
         for key, widget in action.items():
@@ -175,41 +197,60 @@ class QAApp:
         driver.maximize_window()
         driver.get(self.url_entry.get())
 
-        for action in self.actions:
+        loop_start_index = None
+        for index, action in enumerate(self.actions):
             if self.stop_test:  # Check if the stop flag is set
                 break
-            if action['type'] == 'scroll':
-                scroll_amount = action['scroll_entry'].get()
-                if scroll_amount.isdigit():
-                    scroll_amount = int(scroll_amount)
-                    driver.execute_script(f"window.scrollBy(0 , {scroll_amount});")
-                    time.sleep(1)
-                else:
-                    messagebox.showerror("Invalid Input", "Scroll amount must be a number.")
-            elif action['type'] == 'sleep':
-                sleep_time = action['sleep_entry'].get()
-                if sleep_time.isdigit():
-                    sleep_time = int(sleep_time)
-                    time.sleep(sleep_time)
-                else:
-                    messagebox.showerror("Invalid Input", "Sleep time must be a number.")
-            elif action['type'] == 'xpath':
-                xpath = action['xpath_entry'].get()
-                action_type = action['action_dropdown'].get()
-                try:
-                    element = driver.find_element(By.XPATH, xpath)
-                    if action_type == 'click':
-                        element.click()
-                    elif action_type == 'input':
-                        header = action['header_dropdown'].get()
-                        if header in self.headers:
-                            value = self.csv_data[0][header]
-                            element.send_keys(value)
-                except Exception as e:
-                    messagebox.showerror("Error", f"Failed to perform action on XPath: {xpath}\n{str(e)}")
+            if action['type'] == 'loop':
+                loop_start_index = index + 1  # Start looping from the next action
+                continue
+            
+            if action['type'] == 'end_loop':
+                loop_start_index = None  # Reset loop start index
+                continue
+            
+            if loop_start_index is not None:
+                # Loop through actions until we hit another loop or the end
+                while index < len(self.actions) and self.actions[index]['type'] not in ['loop', 'end_loop']:
+                    self.perform_action(driver, self.actions[index])
+                    index += 1
+                continue
+            
+            self.perform_action(driver, action)
 
         time.sleep(120)  # Sleep for 120 seconds if not stopped
         driver.quit()
+
+    def perform_action(self, driver, action):
+        if action['type'] == 'scroll':
+            scroll_amount = action['scroll_entry'].get()
+            if scroll_amount.isdigit():
+                scroll_amount = int(scroll_amount)
+                driver.execute_script(f"window.scrollBy(0 , {scroll_amount});")
+                time.sleep(1)
+            else:
+                messagebox.showerror("Invalid Input", "Scroll amount must be a number.")
+        elif action['type'] == 'sleep':
+            sleep_time = action['sleep_entry'].get()
+            if sleep_time.isdigit():
+                sleep_time = int(sleep_time)
+                time.sleep(sleep_time)
+            else:
+                messagebox.showerror("Invalid Input", "Sleep time must be a number.")
+        elif action['type'] == 'xpath':
+            xpath = action['xpath_entry'].get()
+            action_type = action['action_dropdown'].get()
+            try:
+                element = driver.find_element(By.XPATH, xpath)
+                if action_type == 'click':
+                    element.click()
+                elif action_type == 'input':
+                    header = action['header_dropdown'].get()
+                    if header in self.headers:
+                        value = self.csv_data[0][header]
+                        element.send_keys(value)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to perform action on XPath: {xpath}\n{str(e)}")
 
     def make_exe(self):
         exe_name = simpledialog.askstring("Input", "Enter the name for the EXE file:")
